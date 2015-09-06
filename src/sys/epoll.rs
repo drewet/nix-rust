@@ -1,7 +1,6 @@
 use {Error, Result, from_ffi};
 use errno::Errno;
 use libc::c_int;
-use std::fmt;
 use std::os::unix::io::RawFd;
 
 mod ffi {
@@ -35,41 +34,6 @@ bitflags!(
     }
 );
 
-impl fmt::Debug for EpollEventKind {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        let variants = [
-            (EPOLLIN,       "EPOLLIN"),
-            (EPOLLPRI,      "EPOLLPRI"),
-            (EPOLLOUT,      "EPOLLOUT"),
-            (EPOLLRDNORM,   "EPOLLRDNORM"),
-            (EPOLLRDBAND,   "EPOLLRDBAND"),
-            (EPOLLWRNORM,   "EPOLLWRNORM"),
-            (EPOLLWRBAND,   "EPOLLWRBAND"),
-            (EPOLLMSG,      "EPOLLMSG"),
-            (EPOLLERR,      "EPOLLERR"),
-            (EPOLLHUP,      "EPOLLHUP"),
-            (EPOLLRDHUP,    "EPOLLRDHUP"),
-            (EPOLLWAKEUP,   "EPOLLWAKEUP"),
-            (EPOLLONESHOT,  "EPOLLONESHOT"),
-            (EPOLLET,       "EPOLLET")];
-
-        let mut first = true;
-
-        for &(val, name) in variants.iter() {
-            if self.contains(val) {
-                if first {
-                    first = false;
-                    try!(write!(fmt, "{}", name));
-                } else {
-                    try!(write!(fmt, "|{}", name));
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
-
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub enum EpollOp {
@@ -78,27 +42,34 @@ pub enum EpollOp {
     EpollCtlMod = 3
 }
 
-#[cfg(all(target_os = "android", not(target_arch = "x86_64")))]
-#[derive(Copy)]
+#[cfg(not(target_arch = "x86_64"))]
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct EpollEvent {
     pub events: EpollEventKind,
     pub data: u64
 }
 
-#[cfg(all(target_os = "android", not(target_arch = "x86_64")))]
-#[test]
-fn test_epoll_event_size() {
-    use std::mem::size_of;
-    assert_eq!(size_of::<EpollEvent>(), 16);
-}
-
-#[cfg(any(not(target_os = "android"), target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 #[derive(Clone, Copy)]
 #[repr(C, packed)]
 pub struct EpollEvent {
     pub events: EpollEventKind,
     pub data: u64
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[test]
+fn test_epoll_event_size() {
+    use std::mem::size_of;
+    assert_eq!(size_of::<EpollEvent>(), 12);
+}
+
+#[cfg(target_arch = "arm")]
+#[test]
+fn test_epoll_event_size() {
+    use std::mem::size_of;
+    assert_eq!(size_of::<EpollEvent>(), 16);
 }
 
 #[inline]

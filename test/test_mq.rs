@@ -1,5 +1,7 @@
-use nix::mqueue::{mq_open, mq_close, mq_send, mq_receive};
-use nix::mqueue::{O_CREAT, O_WRONLY, O_RDONLY};
+use nix::mqueue::{mq_open, mq_close, mq_send, mq_receive, mq_getattr, mq_setattr, mq_unlink};
+use nix::mqueue::{O_CREAT, O_WRONLY, O_RDONLY, O_NONBLOCK};
+
+
 use nix::mqueue::MqAttr;
 use nix::sys::stat::{S_IWUSR, S_IRUSR, S_IRGRP, S_IROTH};
 use std::ffi::CString;
@@ -9,15 +11,14 @@ use libc::c_long;
 use nix::unistd::{fork, read, write, pipe};
 use nix::unistd::Fork::{Child, Parent};
 use nix::sys::wait::*;
-
-
+use nix::errno::Errno::*;
+use nix::Error::Sys;
 
 #[test]
-fn mq_send_and_receive() {
+fn test_mq_send_and_receive() {
 
     const MSG_SIZE: c_long =  32;
-
-    let attr =  MqAttr { mq_flags: 0, mq_maxmsg: 10, mq_msgsize: MSG_SIZE, mq_curmsgs: 0 };
+    let attr =  MqAttr::new(0, 10, MSG_SIZE, 0);
     let mq_name_in_parent = &CString::new(b"/a_nix_test_queue".as_ref()).unwrap();
     let mqd_in_parent = mq_open(mq_name_in_parent, O_CREAT | O_WRONLY, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH, &attr).unwrap();
     let msg_to_send = &CString::new("msg_1").unwrap();
@@ -50,4 +51,64 @@ fn mq_send_and_receive() {
       // panic, fork should never fail unless there is a serious problem with the OS
       Err(_) => panic!("Error: Fork Failed")
     }
+}
+
+
+#[test]
+fn test_mq_get_attr() {
+    const MSG_SIZE: c_long =  32;
+    let initial_attr =  MqAttr::new(0, 10, MSG_SIZE, 0);
+    let mq_name = &CString::new("/attr_test_get_attr".as_bytes().as_ref()).unwrap();
+    let mqd = mq_open(mq_name, O_CREAT | O_WRONLY, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH, &initial_attr).unwrap();
+    let read_attr = mq_getattr(mqd);
+    assert!(read_attr.unwrap() == initial_attr);
+    mq_close(mqd).unwrap();
+}
+
+#[test]
+fn test_mq_set_attr() {
+    const MSG_SIZE: c_long =  32;
+    let initial_attr =  MqAttr::new(0, 10, MSG_SIZE, 0);
+    let mq_name = &CString::new("/attr_test_get_attr".as_bytes().as_ref()).unwrap();
+    let mqd = mq_open(mq_name, O_CREAT | O_WRONLY, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH, &initial_attr).unwrap();
+
+    let new_attr =  MqAttr::new(0, 20, MSG_SIZE * 2, 100);
+    let old_attr = mq_setattr(mqd, &new_attr);
+    assert!(old_attr.unwrap() == initial_attr);
+
+    let new_attr_get = mq_getattr(mqd);
+    // The following tests make sense. No changes here because according to the Linux man page only
+    // O_NONBLOCK can be set (see tests below)
+    assert!(new_attr_get.unwrap() != new_attr);
+
+    let new_attr_non_blocking =  MqAttr::new(O_NONBLOCK.bits() as c_long, 10, MSG_SIZE, 0);
+    mq_setattr(mqd, &new_attr_non_blocking).unwrap();
+    let new_attr_get = mq_getattr(mqd);
+
+    // now the O_NONBLOCK flag has been set
+    assert!(new_attr_get.unwrap() != initial_attr);
+    assert!(new_attr_get.unwrap() == new_attr_non_blocking);
+    mq_close(mqd).unwrap();
+}
+
+
+
+#[test]
+fn test_mq_unlink() {
+    const MSG_SIZE: c_long =  32;
+    let initial_attr =  MqAttr::new(0, 10, MSG_SIZE, 0);
+    let mq_name_opened = &CString::new("/mq_unlink_test".as_bytes().as_ref()).unwrap();
+    let mq_name_not_opened = &CString::new("/mq_unlink_test".as_bytes().as_ref()).unwrap();
+    let mqd = mq_open(mq_name_opened, O_CREAT | O_WRONLY, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH, &initial_attr).unwrap();
+
+    let res_unlink = mq_unlink(mq_name_opened);
+    assert!(res_unlink == Ok(()) );
+
+    let res_unlink_not_opened = mq_unlink(mq_name_not_opened);
+    assert!(res_unlink_not_opened == Err(Sys(ENOENT)) );
+
+    mq_close(mqd).unwrap();
+    let res_unlink_after_close = mq_unlink(mq_name_opened);
+    assert!(res_unlink_after_close == Err(Sys(ENOENT)) );
+
 }

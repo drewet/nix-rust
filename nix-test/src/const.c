@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
@@ -160,8 +161,15 @@ get_int_const(const char* err) {
     // GET_CONST(EHWPOISON);
 #endif
 #endif
-
-#ifdef DARWIN
+#if defined(DARWIN) || defined(__FreeBSD__)
+    GET_CONST(ENEEDAUTH);
+    GET_CONST(EOVERFLOW);
+    GET_CONST(EILSEQ);
+    GET_CONST(ENOATTR);
+    GET_CONST(EBADMSG);
+    GET_CONST(EPROTO);
+    GET_CONST(ENOTRECOVERABLE);
+    GET_CONST(EOWNERDEAD);
     GET_CONST(ENOTSUP);
     GET_CONST(EPROCLIM);
     GET_CONST(EUSERS);
@@ -175,30 +183,33 @@ get_int_const(const char* err) {
     GET_CONST(EPROCUNAVAIL);
     GET_CONST(EFTYPE);
     GET_CONST(EAUTH);
-    GET_CONST(ENEEDAUTH);
+    GET_CONST(ECANCELED);
+#endif
+
+#ifdef DARWIN
     GET_CONST(EPWROFF);
     GET_CONST(EDEVERR);
-    GET_CONST(EOVERFLOW);
     GET_CONST(EBADEXEC);
     GET_CONST(EBADARCH);
     GET_CONST(ESHLIBVERS);
     GET_CONST(EBADMACHO);
-    GET_CONST(ECANCELED);
-    GET_CONST(EILSEQ);
-    GET_CONST(ENOATTR);
-    GET_CONST(EBADMSG);
     GET_CONST(EMULTIHOP);
     GET_CONST(ENODATA);
     GET_CONST(ENOLINK);
     GET_CONST(ENOSR);
     GET_CONST(ENOSTR);
-    GET_CONST(EPROTO);
     GET_CONST(ETIME);
     GET_CONST(EOPNOTSUPP);
     GET_CONST(ENOPOLICY);
-    GET_CONST(ENOTRECOVERABLE);
-    GET_CONST(EOWNERDEAD);
     GET_CONST(EQFULL);
+#endif
+
+#ifdef __FreeBSD__
+    GET_CONST(EDOOFUS);
+    GET_CONST(EMULTIHOP);
+    GET_CONST(ENOLINK);
+    GET_CONST(ENOTCAPABLE);
+    GET_CONST(ECAPMODE);
 #endif
 
     /*

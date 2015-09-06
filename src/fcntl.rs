@@ -11,6 +11,8 @@ pub use self::ffi::flock;
 mod ffi {
     pub use libc::{open, fcntl};
     pub use self::os::*;
+    pub use libc::funcs::bsd44::flock as libc_flock;
+    pub use libc::consts::os::bsd44::{LOCK_SH, LOCK_EX, LOCK_NB, LOCK_UN};
 
     #[cfg(any(target_os = "linux", target_os = "android"))]
     mod os {
@@ -38,6 +40,14 @@ mod ffi {
         pub const F_SETLK:         c_int = 6;
         pub const F_SETLKW:        c_int = 7;
         pub const F_GETLK:         c_int = 5;
+
+        pub const F_ADD_SEALS:     c_int = 1033;
+        pub const F_GET_SEALS:     c_int = 1034;
+
+        pub const F_SEAL_SEAL:     c_int = 1;
+        pub const F_SEAL_SHRINK:   c_int = 2;
+        pub const F_SEAL_GROW:     c_int = 4;
+        pub const F_SEAL_WRITE:    c_int = 8;
     }
 
     #[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "ios", target_os = "openbsd"))]
@@ -96,7 +106,11 @@ pub enum FcntlArg<'a> {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     F_OFD_SETLKW(&'a flock),
     #[cfg(any(target_os = "linux", target_os = "android"))]
-    F_OFD_GETLK(&'a mut flock)
+    F_OFD_GETLK(&'a mut flock),
+    #[cfg(target_os = "linux")]
+    F_ADD_SEALS(SealFlag),
+    #[cfg(target_os = "linux")]
+    F_GET_SEALS,
 
     // TODO: Rest of flags
 }
@@ -116,6 +130,10 @@ pub fn fcntl(fd: RawFd, arg: FcntlArg) -> Result<c_int> {
             F_SETLK(flock) => ffi::fcntl(fd, ffi::F_SETLK, flock),
             F_SETLKW(flock) => ffi::fcntl(fd, ffi::F_SETLKW, flock),
             F_GETLK(flock) => ffi::fcntl(fd, ffi::F_GETLK, flock),
+            #[cfg(target_os = "linux")]
+            F_ADD_SEALS(flag) => ffi::fcntl(fd, ffi::F_ADD_SEALS, flag.bits()),
+            #[cfg(target_os = "linux")]
+            F_GET_SEALS => ffi::fcntl(fd, ffi::F_GET_SEALS),
             #[cfg(any(target_os = "linux", target_os = "android"))]
             _ => unimplemented!()
         }
@@ -126,6 +144,36 @@ pub fn fcntl(fd: RawFd, arg: FcntlArg) -> Result<c_int> {
     }
 
     Ok(res)
+}
+
+pub enum FlockArg {
+    LockShared,
+    LockExclusive,
+    Unlock,
+    LockSharedNonblock,
+    LockExclusiveNonblock,
+    UnlockNonblock,
+}
+
+pub fn flock(fd: RawFd, arg: FlockArg) -> Result<()> {
+    use self::FlockArg::*;
+
+    let res = unsafe {
+        match arg {
+            LockShared => ffi::libc_flock(fd, ffi::LOCK_SH),
+            LockExclusive => ffi::libc_flock(fd, ffi::LOCK_EX),
+            Unlock => ffi::libc_flock(fd, ffi::LOCK_UN),
+            LockSharedNonblock => ffi::libc_flock(fd, ffi::LOCK_SH | ffi::LOCK_NB),
+            LockExclusiveNonblock => ffi::libc_flock(fd, ffi::LOCK_EX | ffi::LOCK_NB),
+            UnlockNonblock => ffi::libc_flock(fd, ffi::LOCK_UN | ffi::LOCK_NB),
+        }
+    };
+
+    if res < 0 {
+        return Err(Error::Sys(Errno::last()));
+    }
+
+    Ok(())
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -163,6 +211,16 @@ mod consts {
             const FD_CLOEXEC = 1
         }
     );
+
+    bitflags!(
+        flags SealFlag: c_int {
+            const F_SEAL_SEAL = 1,
+            const F_SEAL_SHRINK = 2,
+            const F_SEAL_GROW = 4,
+            const F_SEAL_WRITE = 8,
+        }
+    );
+
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
